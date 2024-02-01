@@ -272,9 +272,9 @@ class NVDAhighlighterPlusGuiPanel(
 					"highlighterPlus disabled in config while some of its settings are enabled. "
 					"This will be corrected"
 				)
-				settingsStorage.highlightBrowseMode = False
-				settingsStorage.highlightFocus = False
-				settingsStorage.highlightNavigator = False
+				settingsStorage.highlightPlusBrowseMode = False
+				settingsStorage.highlightPlusFocus = False
+				settingsStorage.highlightPlusNavigator = False
 		super().__init__(parent)
 
 	def _buildGui(self):
@@ -324,16 +324,16 @@ class NVDAhighlighterPlusGuiPanel(
 	def _updateEnabledState(self):
 		settingsStorage = self._getSettingsStorage()
 		settingsToTriggerActivation = [
-			settingsStorage.highlightBrowseMode,
-			settingsStorage.highlightFocus,
-			settingsStorage.highlightNavigator,
+			settingsStorage.highlightPlusBrowseMode,
+			settingsStorage.highlightPlusFocus,
+			settingsStorage.highlightPlusNavigator,
 		]
 		isAnyEnabled = any(settingsToTriggerActivation)
 		if all(settingsToTriggerActivation):
 			self._enabledCheckbox.Set3StateValue(wx.CHK_CHECKED)
 		elif isAnyEnabled:
 			self._enabledCheckbox.Set3StateValue(wx.CHK_UNDETERMINED)
-		else:
+		else:   
 			self._enabledCheckbox.Set3StateValue(wx.CHK_UNCHECKED)
 
 		if not self._ensureEnableState(isAnyEnabled) and isAnyEnabled:
@@ -343,9 +343,9 @@ class NVDAhighlighterPlusGuiPanel(
 		""" Initialization of highlighterPlus failed. Reset settings / GUI
 		"""
 		settingsStorage = self._getSettingsStorage()
-		settingsStorage.highlightBrowseMode = False
-		settingsStorage.highlightFocus = False
-		settingsStorage.highlightNavigator = False
+		settingsStorage.highlightPlusBrowseMode = False
+		settingsStorage.highlightPlusFocus = False
+		settingsStorage.highlightPlusNavigator = False
 		self.updateDriverSettings()
 		self._updateEnabledState()
 
