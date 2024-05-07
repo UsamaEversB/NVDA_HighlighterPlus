@@ -263,9 +263,9 @@ class NVDAhighlighterPlusGuiPanel(
 		if not initiallyEnabledInConfig:
 			settingsStorage = self._getSettingsStorage()
 			settingsToCheck = [
-				settingsStorage.highlightBrowseMode,
-				settingsStorage.highlightFocus,
-				settingsStorage.highlightNavigator,
+				settingsStorage.highlightPlusBrowseMode,
+				settingsStorage.highlightPlusFocus,
+				settingsStorage.highlightPlusNavigator,
 			]
 			if any(settingsToCheck):
 				log.debugWarning(
@@ -317,7 +317,7 @@ class NVDAhighlighterPlusGuiPanel(
 		# bind to all check box events
 		self.Bind(wx.EVT_CHECKBOX, self._onCheckEvent)
 		self._updateEnabledState()
-
+		
 	def onPanelActivated(self):
 		self.lastControl = self.optionsText
 
@@ -361,8 +361,8 @@ class NVDAhighlighterPlusGuiPanel(
 		settingsStorage = self._getSettingsStorage()
 		if evt.GetEventObject() is self._enabledCheckbox:
 			isEnableAllChecked = evt.IsChecked()
-			settingsStorage.highlightBrowseMode = isEnableAllChecked
-			settingsStorage.highlightFocus = isEnableAllChecked
+			settingsStorage.highlightPlusBrowseMode = isEnableAllChecked
+			settingsStorage.highlightPlusFocus = isEnableAllChecked
 			settingsStorage.highlightNavigator = isEnableAllChecked
 			if not self._ensureEnableState(isEnableAllChecked) and isEnableAllChecked:
 				self._onEnableFailure()
@@ -411,6 +411,8 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		extensionPoints.post_focusChange.register(self.handleFocusChange)
 		extensionPoints.post_reviewMove.register(self.handleReviewMove)
 		extensionPoints.post_browseModeMove.register(self.handleBrowseModeMove)
+		extensionPoints.post_coreCycle.register(self.handleUpdateThread)
+		extensionPoints.post_mouseMove.register(self.handleUpdateThread)
 
 	def __init__(self):
 		super().__init__()
@@ -464,6 +466,12 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		except Exception:
 			log.exception("Exception in NVDA highlighterPlus thread")
 
+	def handleUpdateThread(self):
+		log.info(f"handleupdatethread: {self.contextToRectMap} ")
+		self.updateContextRect(context=Context.NAVIGATOR)
+		self.updateContextRect(context=Context.BROWSEMODE)
+		self.updateContextRect(context=Context.FOCUS)
+  
 	def updateContextRect(self, context, rect=None, obj=None):
 		"""Updates the position rectangle of the highlight for the specified context.
 		If rect is specified, the method directly writes the rectangle to the contextToRectMap.
@@ -504,6 +512,12 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 			context for context in _supportedContexts
 			if getattr(self.getSettings(), 'highlightPlus%s' % (context[0].upper() + context[1:]))
 		)
-
-
+	
+	# Remove this at the end of debuggin
+	def usadebugcommand(self):
+		log.info(f"usa debug comannd: {self.contextToRectMap} ")
+		self.updateContextRect(context=Context.NAVIGATOR)
+		self.updateContextRect(context=Context.BROWSEMODE)
+		self.updateContextRect(context=Context.FOCUS, obj=api.getFocusObject())
+  
 VisionEnhancementProvider = NVDAhighlighterPlus
