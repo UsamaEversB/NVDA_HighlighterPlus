@@ -34,7 +34,8 @@ import winGDI
 import weakref
 from colors import RGB
 import core
-
+import time
+import asyncio
 
 class HighlightStyle(
 		namedtuple("HighlightStyle", ("color", "width", "style", "margin"))
@@ -159,6 +160,7 @@ class HighlightWindow(CustomWindow):
 			# The highlighterPlus instance died unexpectedly, kill the window as well
 			winUser.user32.PostQuitMessage(0)
 			return
+		highlighterPlus.Lock("paint")
 		contextRects = {}
 		for context in highlighterPlus.enabledContexts:
 			rect = highlighterPlus.contextToRectMap.get(context)
@@ -174,6 +176,7 @@ class HighlightWindow(CustomWindow):
 				context = Context.FOCUS_NAVIGATOR
 			contextRects[context] = rect
 		if not contextRects:
+			highlighterPlus.UnLock("paint")
 			return
 		with winUser.paint(self.handle) as hdc:
 			with winGDI.GDIPlusGraphicsContext(hdc) as graphicsContext:
@@ -197,6 +200,7 @@ class HighlightWindow(CustomWindow):
 						HighlightStyle.style
 					) as pen:
 						winGDI.gdiPlusDrawRectangle(graphicsContext, pen, *rect.toLTWH())
+		highlighterPlus.UnLock("paint")
 
 	def refresh(self):
 		winUser.user32.InvalidateRect(self.handle, None, True)
@@ -410,14 +414,24 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 	) -> None:
 		extensionPoints.post_focusChange.register(self.handleFocusChange)
 		extensionPoints.post_reviewMove.register(self.handleReviewMove)
+		# extensionPoints.post_objectUpdate.register(self.handleUpdateThread)
 		extensionPoints.post_browseModeMove.register(self.handleBrowseModeMove)
-		extensionPoints.post_coreCycle.register(self.handleUpdateThread)
-		extensionPoints.post_mouseMove.register(self.handleUpdateThread)
+		# extensionPoints.post_coreCycle.register(self.handleUpdateThread)
+		# extensionPoints.post_mouseMove.register(self.handleUpdateThread)
 
+	def report(self, context):
+		log.info(f"report contextmap details: {self.contextrectmaptest.MapContent}")
+  
 	def __init__(self):
 		super().__init__()
 		log.debug("Starting NVDAhighlighterPlus")
 		self.contextToRectMap = {}
+
+		self.contextrectmaptest = ContextMap()
+		self.contextrectmaptest.bind_to(self.report)
+		self.contextrectmaptest.SetMapContent(Context.BROWSEMODE, "BROWSEMODE")
+		self.contextrectmaptest.SetMapContent(Context.NAVIGATOR, "NAVIGATOR")
+		self.contextrectmaptest.SetMapContent(Context.FOCUS, "FOCUS")
 		winGDI.gdiPlusInitialize()
 		self._highlighterPlusThread = threading.Thread(
 			name=f"{self.__class__.__module__}.{self.__class__.__qualname__}",
@@ -426,8 +440,11 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		self._highlighterPlusRunningEvent = threading.Event()
 		self._highlighterPlusThread.daemon = True
 		self._highlighterPlusThread.start()
+  
+		# Update
 		# Make sure the highlighterPlus thread doesn't exit early.
 		waitResult = self._highlighterPlusRunningEvent.wait(0.2)
+		# waitResult1 = self._threadtempEvent.wait(0.2)
 		if waitResult is False or not self._highlighterPlusThread.is_alive():
 			raise RuntimeError("highlighterPlus thread wasn't able to initialize correctly")
 
@@ -455,6 +472,7 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 			while (res := winUser.getMessage(byref(msg), None, 0, 0)) > 0:
 				winUser.user32.TranslateMessage(byref(msg))
 				winUser.user32.DispatchMessageW(byref(msg))
+				self.main()
 			if res == -1:
 				# See the return value section of
 				# https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessage
@@ -467,17 +485,41 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 			log.exception("Exception in NVDA highlighterPlus thread")
 
 	def handleUpdateThread(self):
-		log.info(f"handleupdatethread: {self.contextToRectMap} ")
+		log.info(f"handleupdatethread contexttorectmap: {self.contextToRectMap} ")
+		
+
 		self.updateContextRect(context=Context.NAVIGATOR)
-		self.updateContextRect(context=Context.BROWSEMODE)
+		# self.updateContextRect(context=Context.BROWSEMODE)
 		self.updateContextRect(context=Context.FOCUS)
+		log.info("Succesful escape")
   
+	def Lock(self, calledfrom):
+		self.LockMap = True
+		log.info("Go to JAIL, called from "+ calledfrom)
+	
+	def UnLock(self, calledfrom):
+		self.LockMap = False
+		log.info("Leave my JAIL, called from "+ calledfrom)
+
+	def IsLocked(self):
+		log.info(f"Are we in JAIL? {self.LockMap}")
+		return self.LockMap == True
+  
+	def main(self):
+		log.info(f"\nyippie starter")
+		self.handleUpdateThread()
+
 	def updateContextRect(self, context, rect=None, obj=None):
 		"""Updates the position rectangle of the highlight for the specified context.
 		If rect is specified, the method directly writes the rectangle to the contextToRectMap.
 		Otherwise, it will call L{getContextRect}
 		"""
+		log.info(f"Updating this context: {context}")
+		if self.IsLocked():
+			return
+		self.Lock("update")
 		if context not in self.enabledContexts:
+			self.UnLock("update")
 			return
 		if rect is None:
 			try:
@@ -485,7 +527,8 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 			except (LookupError, NotImplementedError, RuntimeError, TypeError):
 				rect = None
 		self.contextToRectMap[context] = rect
-
+		self.UnLock("update")
+  
 	def handleFocusChange(self, obj):
 		self.updateContextRect(context=Context.FOCUS, obj=obj)
 		if not api.isObjectInActiveTreeInterceptor(obj):
@@ -519,5 +562,30 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		self.updateContextRect(context=Context.NAVIGATOR)
 		self.updateContextRect(context=Context.BROWSEMODE)
 		self.updateContextRect(context=Context.FOCUS, obj=api.getFocusObject())
-  
+		
 VisionEnhancementProvider = NVDAhighlighterPlus
+
+
+class ContextMap():
+    
+	def __init__(self):
+		log.info('INIT CONTEXTMAP')
+		self._Map ={}
+		self._observers = []
+
+	@property
+	def MapContent(self):
+		log.info(f"map content: {self._Map}")
+		return self._Map
+
+	def SetMapContent(self, context, value):
+		log.info(f"map content: {self._Map} new value: {value}")
+		self._Map[context] = value
+		for callback in self._observers:
+			log.info('announcing change')
+			callback(self._Map)
+		log.info(f"map content: {self._Map[context]} new value: {value}")
+		
+	def bind_to(self, callback):
+		log.info('bound')
+		self._observers.append(callback)
