@@ -161,7 +161,7 @@ class HighlightWindow(CustomWindow):
 			return
 		contextRects = {}
 		for context in highlighterPlus.enabledContexts:
-			rect = highlighterPlus.crmap.MapContent.get(context)
+			rect = highlighterPlus.contextToRectMap.get(context)
 			if not rect:
 				continue
 			elif context == Context.NAVIGATOR and contextRects.get(Context.FOCUS) == rect:
@@ -419,8 +419,6 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		super().__init__()
 		log.debug("Starting NVDAhighlighterPlus")
 		self.contextToRectMap = {}
-		self.crmap = ContextMap()
-		self.numUACCalled=0
 		winGDI.gdiPlusInitialize()
 		self._highlighterPlusThread = threading.Thread(
 			name=f"{self.__class__.__module__}.{self.__class__.__qualname__}",
@@ -433,7 +431,6 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		# Update
 		# Make sure the highlighterPlus thread doesn't exit early.
 		waitResult = self._highlighterPlusRunningEvent.wait(0.2)
-		# waitResult1 = self._threadtempEvent.wait(0.2)
 		if waitResult is False or not self._highlighterPlusThread.is_alive():
 			raise RuntimeError("highlighterPlus thread wasn't able to initialize correctly")
 
@@ -446,7 +443,7 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 				self._highlighterPlusThread.join()
 			self._highlighterPlusThread = None
 		winGDI.gdiPlusTerminate()
-		self.crmap.MapContent.clear()
+		self.contextToRectMap.clear()
 		super().terminate()
 
 	def _run(self):
@@ -474,28 +471,14 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 
 	def handleUpdateThread(self):
 		log.info("handle update thread corecycle")
-		self.numUACCalled = 0
-		self.updateContextRect(context=Context.NAVIGATOR)
+		self.handleBrowseModeMove()
+		self.handleReviewMove()
 
 	def handleUpdateAllContexts(self):
-		log.info(f"Log core cycle secondStart update all context info: {self.numUACCalled}")
-		if self.numUACCalled < 5:
-			try:
-				log.info(f"TRY LOOP: entered")
-				log.info(f"TRY LOOP: mapcontent {self.crmap.MapContent}")
-				location = api.getNavigatorObject().location.toLTRB()
-				log.info(f"TRY LOOP: api {location }")
-				if (location == self.crmap.MapContent[Context.NAVIGATOR]):
-					log.info("exit early")
-				else:
-					log.info(f"TRY LOOP not hit")
-					self.crmap.SetMapContent(context=Context.NAVIGATOR, value=location)
-			except:
-				log.info("can't access vars")
-
-			self.numUACCalled += 1
-			time.sleep(0.05)
-			self.handleUpdateAllContexts()	
+		time.sleep(0.1)
+		log.info("handle update thread second core cycle")
+		self.handleBrowseModeMove()
+		self.handleReviewMove()
    
 	def updateContextRect(self, context, rect=None, obj=None):
 		"""Updates the position rectangle of the highlight for the specified context.
@@ -509,19 +492,19 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 				rect = getContextRect(context, obj=obj)
 			except (LookupError, NotImplementedError, RuntimeError, TypeError):
 				rect = None
-		self.crmap.SetMapContent(context, rect)
+		self.contextToRectMap[context] = rect
 
 	def handleFocusChange(self, obj):
 		self.updateContextRect(context=Context.FOCUS, obj=obj)
 		if not api.isObjectInActiveTreeInterceptor(obj):
-			self.crmap.MapContent.pop(Context.BROWSEMODE, None)
+			self.contextToRectMap.pop(Context.BROWSEMODE, None)
 		else:
 			self.handleBrowseModeMove()
 
-	def handleReviewMove(self, context):
+	def handleReviewMove(self):
 		self.updateContextRect(context=Context.NAVIGATOR)
 
-	def handleBrowseModeMove(self, obj=None):
+	def handleBrowseModeMove(self):
 		self.updateContextRect(context=Context.BROWSEMODE)
 
 	def refresh(self):
@@ -539,20 +522,3 @@ class NVDAhighlighterPlus(providerBase.VisionEnhancementProvider):
 		)
 
 VisionEnhancementProvider = NVDAhighlighterPlus
-
-
-class ContextMap():
-
-	def __init__(self):
-		log.info('INIT CONTEXTMAP')
-		self._Map ={}
-		self._observers = []
-
-	@property
-	def MapContent(self):
-		log.info(f"map content get old value: {self._Map}")
-		return self._Map
-
-	def SetMapContent(self, context, value):
-		log.info(f"map content set old values content: {self._Map} \nCurrent context: {context} new value: {value}, apinav: {api.getNavigatorObject().location}")
-		self._Map[context] = value
